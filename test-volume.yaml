@@ -1,0 +1,11 @@
+version: "3.9"
+
+services:
+  test:
+    name: test-bash
+    image: docker.io/library/bash
+    volumes:
+      - /Temp/test-local:/home
+volumes:
+  test-local:
+    external: true
