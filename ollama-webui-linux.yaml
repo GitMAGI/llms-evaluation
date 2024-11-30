@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   openWebUI:
-    name: open-webui
+    container_name: open-webui
     image: ghcr.io/open-webui/open-webui:main
     restart: always
     ports:
@@ -13,7 +13,7 @@ services:
       - ./.local-vol/open-webui-local:/app/backend/data
 
   ollama:
-    name: ollama
+    container_name: ollama
     image: docker.io/ollama/ollama
     ports:
       - "11434:11434"
