@@ -1,6 +1,6 @@
 # Large Language Models Evaluation
 
-_Note: It seems to be not possible to mount a volume in windows specifying disk letter. So if you want to mount a volume with absolute path, you have to run the docker-compose command from the same disk you want to mount as volume_
+_Note: It seems to be not possible to mount a volume in windows specifying the disk letter. So if you want to mount a volume with an absolute path, you have to run the docker-compose command from the same disk you want to mount it as a volume_
 
 ## Test CUDA
 ```sh

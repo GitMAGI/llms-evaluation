@@ -1,0 +1,19 @@
+services:
+  invoke-ai:
+    container_name: invoke-ai
+    image: ghcr.io/invoke-ai/invokeai
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./.local-vol/invokeai-local:/invokeai
+    deploy:
+      resources:
+        reservations:
+          devices:
+          - driver: nvidia
+            count: 1
+            capabilities: [gpu]
+
+volumes:
+  invoke-ai-local:
+    external: true
