@@ -49,10 +49,10 @@ protobuf==5.29.3
 psutil==7.0.0
 pure_eval==0.2.3
 pycparser==2.22
+pydub
 Pygments==2.19.1
 pyparsing==3.2.1
 python-dateutil==2.9.0.post0
-pywin32==308
 pyzmq==26.2.1
 requests==2.32.3
 rich==13.9.4
@@ -64,8 +64,8 @@ stack-data==0.6.3
 tensorboard==2.18.0
 tensorboard-data-server==0.7.2
 tensorflow==2.18.0
+tensorflow_datasets
 tensorflow-io-gcs-filesystem==0.31.0
-tensorflow_intel==2.18.0
 termcolor==2.5.0
 threadpoolctl==3.5.0
 tornado==6.4.2
