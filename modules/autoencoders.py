@@ -103,21 +103,21 @@ def create_convolutional_autoencoder(
 This function creates a forward autoencoder model.
 Parameters:
     input_dim: int, shape of the input data (height * width * channels)
-    conv_filters: list of integers, number of filters in each convolutional layer
-    conv_activations: list of strings, activations in each convolutional layer
+    filters: list of integers, number of neurons in each layer
+    activations: list of strings, activations in each layer
     latent_space_dim: integer, dimension of the latent space
 """
 def create_autoencoder(
         input_dim,
-        filters,
+        neurons,
         activations,
         latent_space_dim
 ):
-    if len(filters) != len(activations):
-        raise ValueError("The length of the following lists must be the same: conv_filters, conv_activations")
+    if len(neurons) != len(activations):
+        raise ValueError("The length of the following lists must be the same: neurons, activations")
 
     # Internal variables
-    _num_layers = len(filters)
+    _num_layers = len(neurons)
 
     # Encoder
     # Create Input layer
@@ -128,7 +128,7 @@ def create_autoencoder(
         layer_number = layer_index + 1
         #print(f"layer_index: {layer_index} | activation: {activations[layer_index]}")
         layer = Dense(
-            filters[layer_index], 
+            neurons[layer_index], 
             activation=activations[layer_index],
             name=f"encoder_layer_{layer_number}"
         )
@@ -144,19 +144,19 @@ def create_autoencoder(
     # Decoder
     # Create Input layer
     decoder_input = Input(shape=(latent_space_dim,), name="decoder_input")    
-    # Create all convolutional blocks in decoder
+    # Create all blocks in decoder
     x = decoder_input
     for layer_index in reversed(range(0, _num_layers)):
         layer_num = _num_layers - layer_index
         layer = Dense(
-            filters[layer_index], 
+            neurons[layer_index], 
             activation=activations[layer_index],            
             name=f"decoder_layer_{layer_num}"
         )
         x = layer(x)
     layers = x
     # Create output layer
-    sigmoid_layer = Dense(input_dim, activation="sigmoid", name="sigmoid_layer")(layers)
+    sigmoid_layer = Dense(input_dim, activation="sigmoid", name="decoder_output")(layers)
     decoder_output = sigmoid_layer
     # Define the model
     decoder = Model(decoder_input, decoder_output, name="decoder")
