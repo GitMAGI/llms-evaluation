@@ -14,9 +14,9 @@ Parameters:
     latent_space_dim: integer, dimension of the latent space
 """
 def create_convolutional_autoencoder(
-        input_shape,
-        conv_filters,
-        conv_kernels,
+        input_shape,            
+        conv_filters,           # dimension of the output space
+        conv_kernels,           # size of the convolution window
         conv_strides,
         conv_activations,
         latent_space_dim
@@ -36,14 +36,13 @@ def create_convolutional_autoencoder(
     for layer_index in range(_num_conv_layers):
         layer_number = layer_index + 1
         conv_layer = Conv2D(
-            filters=conv_filters[layer_index],
-            kernel_size=conv_kernels[layer_index],
+            filters=conv_filters[layer_index],          # (int) dimension of the output space
+            kernel_size=conv_kernels[layer_index],      # (tuple) size of the convolution window
             strides=conv_strides[layer_index],
             padding="same",
             name=f"encoder_conv_layer_{layer_number}"
         )
         x = conv_layer(x)
-        #x = ReLU(name=f"encoder_relu_{layer_number}")(x)
         x = Activation(conv_activations[layer_index], name=f"encoder_relu_{layer_number}")(x)
         x = BatchNormalization(name=f"encoder_bn_{layer_number}")(x)
     conv_layers = x
@@ -75,7 +74,6 @@ def create_convolutional_autoencoder(
             name=f"decoder_conv_transpose_layer_{layer_num}"
         )
         x = conv_transpose_layer(x)
-        #x = ReLU(name=f"decoder_relu_{layer_num}")(x)
         x = Activation(conv_activations[layer_index], name=f"decoder_relu_{layer_num}")(x)
         x = BatchNormalization(name=f"decoder_bn_{layer_num}")(x)
     conv_transpose_layers = x
