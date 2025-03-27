@@ -82,10 +82,10 @@ class Autoencoder(Model):
         self._save_training_history(save_folder)
 
     def _save_training_history(self, save_folder):
-        if self._training_history:
+        if self._training_history and self._training_history.history:
             save_path = os.path.join(save_folder, f"{self._model_type}_{self.name}.training_history.pkl")
             with open(save_path, "wb") as f:
-                pickle.dump(self._training_history, f)
+                pickle.dump(self._training_history.history, f)
 
     def _save_parameters(self, save_folder):        
         parameters = self._get_parameters_to_save()
@@ -110,9 +110,10 @@ class Autoencoder(Model):
         # Load training history
         history = None
         history_path = os.path.join(save_folder, f"{model_type}_{model_name}.training_history.pkl")
-        if os.path.exists(history_path):            
+        if os.path.exists(history_path):
+            history = tf.keras.callbacks.History()         
             with open(history_path, "rb") as f:
-                history = pickle.load(f)
+                history.history = pickle.load(f)
         # Load weights
         weights_path = os.path.join(save_folder, f"{model_type}_{model_name}.weights.h5")
         if not os.path.exists(weights_path):
@@ -488,7 +489,7 @@ class VariationalAutoencoder(Autoencoder):
             kl_loss = -0.5 * (1 + log_var - tf.square(mean) - tf.exp(log_var))
             kl_loss = tf.reduce_mean(tf.reduce_sum(kl_loss, axis=1))
             total_loss = self._reconstruction_loss_weight * recon_loss + kl_loss
-        grads = tape.gradient(total_loss, self.trainable_weights)
+            grads = tape.gradient(total_loss, self.trainable_weights)
         self.optimizer.apply_gradients(zip(grads, self.trainable_weights))
         self._total_loss_tracker.update_state(total_loss)
         self._reconstruction_loss_tracker.update_state(recon_loss)
