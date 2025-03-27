@@ -1,40 +1,50 @@
+import os
 import tensorflow as tf
-from keras import Model
-from keras.api.layers import Input, Dense, Conv2D, Lambda, Conv2DTranspose, Reshape, Flatten, BatchNormalization, Activation
+from keras import Model, layers
+from keras.api.layers import Input, Dense, Conv2D, Conv2DTranspose, Reshape, Flatten, BatchNormalization, Activation
 import numpy as np
 from datetime import datetime
-import os
 import pickle
-from abc import ABC, abstractmethod
+import abc
 
-class Autoencoder(ABC):
+class Autoencoder(Model):
+    _metaclass__ = abc.ABCMeta
+    
+    """
+    Autoencoder class inheriting Keras Model
+    """
     def __init__(
             self,            
             latent_space_dim,
-            model_type,
-            model_name=None
-        ):        
-        if model_name is None:
-            model_name = datetime.now().strftime("%Y%m%d%H%M%S")           
-        self._latent_space_dim = latent_space_dim
-        self._model = None
+            model_name=None,
+            **kwargs
+        ):
+        self._model_type = self.__class__.__name__
+
         self._encoder = None
         self._decoder = None
-        self._model_name = model_name
-        self._model_type = model_type
         self._training_history = None
-        self._build()
 
-    @abstractmethod
+        super().__init__(**kwargs)
+
+        if model_name is None:
+            model_name = datetime.now().strftime("%Y%m%d%H%M%S")
+        self._latent_space_dim = latent_space_dim        
+        self.name = model_name
+        
+        self._build()        
+        self.built = True
+
+    @abc.abstractmethod
     def _get_parameters_to_save(self):
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def _build(self):
         pass
 
     def get_name(self):
-        return self._model_name
+        return self.name
     
     def get_type(self):
         return self._model_type
@@ -47,21 +57,16 @@ class Autoencoder(ABC):
 
     def get_decoder(self):
         return self._decoder
-    
-    def get_autoencoder(self):
-        return self._model
-    
+        
     def print_summaries(self):
-        self._model.summary()
+        self.summary()
         self._encoder.summary()
         self._decoder.summary()
 
-    def compile(self, loss, optimizer):
-        self._model.compile(loss=loss, optimizer=optimizer)
-
     def train(self, x_train, x_val, batch_size, epochs, shuffle=True):
-        self._training_history = self._model.fit(
-            x_train, x_train,
+        self._training_history = self.fit(
+            x_train, 
+            x_train,
             validation_data=(x_val, x_val),
             batch_size=batch_size,
             shuffle=shuffle,
@@ -78,19 +83,19 @@ class Autoencoder(ABC):
 
     def _save_training_history(self, save_folder):
         if self._training_history:
-            save_path = os.path.join(save_folder, f"{self._model_type}_{self._model_name}.training_history.pkl")
+            save_path = os.path.join(save_folder, f"{self._model_type}_{self.name}.training_history.pkl")
             with open(save_path, "wb") as f:
                 pickle.dump(self._training_history, f)
 
     def _save_parameters(self, save_folder):        
         parameters = self._get_parameters_to_save()
-        save_path = os.path.join(save_folder, f"{self._model_type}_{self._model_name}.parameters.pkl")
+        save_path = os.path.join(save_folder, f"{self._model_type}_{self.name}.parameters.pkl")
         with open(save_path, "wb") as f:
             pickle.dump(parameters, f)
 
     def _save_weights(self, save_folder):
-        save_path = os.path.join(save_folder, f"{self._model_type}_{self._model_name}.weights.h5")
-        self._model.save_weights(save_path)
+        save_path = os.path.join(save_folder, f"{self._model_type}_{self.name}.weights.h5")
+        self.save_weights(save_path)
     
     @classmethod
     def load(cls, save_folder, model_name):
@@ -113,9 +118,14 @@ class Autoencoder(ABC):
         if not os.path.exists(weights_path):
             raise ValueError(f"Weights for model '{model_name}' not found in '{save_folder}'. Do not use prefix '{model_type}' in model_name")
         cls = cls(*parameters)
-        cls._model.load_weights(weights_path)
+        cls.load_weights(weights_path)
         cls._training_history = history
         return cls
+    
+    def call(self, x):
+        encoded = self._encoder(x)
+        decoded = self._decoder(encoded)
+        return decoded
 
 class VanillaAutoencoder(Autoencoder):
     """
@@ -133,7 +143,8 @@ class VanillaAutoencoder(Autoencoder):
             neurons, 
             activations, 
             latent_space_dim,
-            model_name=None
+            model_name=None,
+            **kwargs
         ):
         if len(neurons) != len(activations):
             raise ValueError("The length of the following lists must be the same: neurons, activations")
@@ -143,7 +154,7 @@ class VanillaAutoencoder(Autoencoder):
         self._num_layers = len(neurons)
         self._activations = activations
 
-        super().__init__(latent_space_dim, self.__class__.__name__, model_name)
+        super(VanillaAutoencoder, self).__init__(latent_space_dim, model_name, **kwargs)
 
     def _build(self):        
         # Encoder
@@ -188,7 +199,7 @@ class VanillaAutoencoder(Autoencoder):
         # Autoencoder = Encoder + Decoder
         model_input = encoder_input
         model_output = decoder(encoder(model_input))
-        model = Model(model_input, model_output, name=f"{self._model_type}_{self._model_name}_autoencoder")
+        model = Model(model_input, model_output, name=f"{self._model_type}_{self.name}_autoencoder")
 
         # Store components in class private attributes
         #self._model_input = model_input
@@ -203,7 +214,7 @@ class VanillaAutoencoder(Autoencoder):
             self._neurons,
             self._activations,
             self._latent_space_dim,            
-            self._model_name
+            self.name
         ]
 
 class ConvolutedAutoencoder(Autoencoder):
@@ -226,7 +237,8 @@ class ConvolutedAutoencoder(Autoencoder):
             strides,
             activations,
             latent_space_dim,
-            model_name=None
+            model_name=None,
+            **kwargs
         ):
         if len(filters) != len(kernels) != len(strides) != len(activations):
             raise ValueError("The length of the following lists must be the same: filters, kernels, strides, activations")        
@@ -239,10 +251,9 @@ class ConvolutedAutoencoder(Autoencoder):
         self._num_layers = len(filters)
         self._shape_before_bottleneck = None
 
-        super().__init__(latent_space_dim, self.__class__.__name__, model_name)
+        super(ConvolutedAutoencoder, self).__init__(latent_space_dim, model_name, **kwargs)
 
-    def _build(self):   
-
+    def _build(self):
         # Encoder
         # Create Input layer
         encoder_input = Input(shape=self._input_shape, name="encoder_input")
@@ -310,12 +321,7 @@ class ConvolutedAutoencoder(Autoencoder):
         # Autoencoder = Encoder + Decoder
         model_input = encoder_input
         model_output = decoder(encoder(model_input))
-        model = Model(model_input, model_output, name="autoencoder")
-
-        # Autoencoder = Encoder + Decoder
-        model_input = encoder_input
-        model_output = decoder(encoder(model_input))
-        model = Model(model_input, model_output, name=f"{self._model_type}_{self._model_name}_autoencoder")
+        model = Model(model_input, model_output, name=f"{self._model_type}_{self.name}_autoencoder")
 
         # Store components in class private attributes
         #self._model_input = model_input
@@ -332,7 +338,7 @@ class ConvolutedAutoencoder(Autoencoder):
             self._strides,
             self._activations,
             self._latent_space_dim,
-            self._model_name
+            self.name
         ]
 
 class VariationalAutoencoder(Autoencoder):
@@ -347,6 +353,7 @@ class VariationalAutoencoder(Autoencoder):
         latent_space_dim: integer, dimension of the latent space
         model_name: str, name of the model (optional)
     """
+
     def __init__(
             self,
             input_shape,            
@@ -355,23 +362,35 @@ class VariationalAutoencoder(Autoencoder):
             strides,
             activations,
             latent_space_dim,
-            model_name=None
+            model_name=None,
+            reconstruction_loss_weight = 1000,
+            **kwargs
         ):
         if len(filters) != len(kernels) != len(strides) != len(activations):
             raise ValueError("The length of the following lists must be the same: filters, kernels, strides, activations")        
 
         self._input_shape = input_shape
+        self._latent_space_dim = latent_space_dim
         self._filters = filters
         self._kernels = kernels
         self._strides = strides
         self._activations = activations        
         self._num_layers = len(filters)
         self._shape_before_bottleneck = None
-        self._bottleneck_mu = None
-        self._bottleneck_log_variance = None
-        self._reconstruction_loss_weight = None
+        self._reconstruction_loss_weight = reconstruction_loss_weight
 
-        super().__init__(latent_space_dim, self.__class__.__name__, model_name)
+        #creating the 3 loss trackers
+        self._total_loss_tracker = tf.keras.metrics.Mean(name="loss")
+        self._reconstruction_loss_tracker = tf.keras.metrics.Mean(name="recon_loss")
+        self._kl_loss_tracker = tf.keras.metrics.Mean(name="kl_loss")
+
+        super(VariationalAutoencoder, self).__init__(latent_space_dim, model_name, **kwargs)
+
+    class Sampling(layers.Layer):
+        def call(self, inputs):
+            z_mean, z_log_var = inputs
+            epsilon = tf.keras.backend.random_normal(shape=tf.shape(z_mean))
+            return z_mean + tf.exp(0.5* z_log_var) * epsilon
 
     def _build(self):
         # Encoder
@@ -396,18 +415,14 @@ class VariationalAutoencoder(Autoencoder):
         # Create Bottleneck
         self._shape_before_bottleneck = conv_layers.shape[1:]        
         x = Flatten()(conv_layers)
-        self._bottleneck_mu = Dense(self._latent_space_dim, name="mu")(x)
-        self._bottleneck_log_variance = Dense(self._latent_space_dim, name="log_variance")(x)
-        def _sample_point_from_normal_distribution(args):
-            mu, log_variance = args
-            epsilon = tf.random.normal(shape=tf.shape(mu), mean=0., stddev=1.)
-            sampled_point = mu + tf.exp(log_variance / 2) * epsilon
-            return sampled_point
-        x = Lambda(function=_sample_point_from_normal_distribution, output_shape=(self._latent_space_dim,), name="encoder_output")([self._bottleneck_mu, self._bottleneck_log_variance])
+        bottleneck_mu = Dense(self._latent_space_dim, name="mu")(x)
+        bottleneck_log_variance = Dense(self._latent_space_dim, name="log_variance")(x)
+
+        x = self.Sampling(name="encoder_output")([bottleneck_mu, bottleneck_log_variance])
         bottleneck = x
 
-        # Define the model
-        encoder = Model(encoder_input, bottleneck, name="encoder")
+        # Define the model (multiple output defined in the array [bottleneck, mu, log_var])
+        encoder = Model(encoder_input, [bottleneck, bottleneck_mu, bottleneck_log_variance] , name="encoder")
 
         # Decoder
         # Create Input layer
@@ -445,45 +460,8 @@ class VariationalAutoencoder(Autoencoder):
         # Define the model
         decoder = Model(decoder_input, decoder_output, name="decoder")
 
-        # Autoencoder = Encoder + Decoder
-        model_input = encoder_input
-        model_output = decoder(encoder(model_input))
-        model = Model(model_input, model_output, name="autoencoder")
-
-        # Autoencoder = Encoder + Decoder
-        model_input = encoder_input
-        model_output = decoder(encoder(model_input))
-        model = Model(model_input, model_output, name=f"{self._model_type}_{self._model_name}_autoencoder")
-
-        # Store components in class private attributes
-        #self._model_input = model_input
-        #self._model_output = model_output
         self._encoder = encoder
-        self._decoder = decoder
-        self._model = model
-
-    def compile(self, optimizer, reconstruction_loss_weight=1000):
-        self._reconstruction_loss_weight = reconstruction_loss_weight
-        self._model.compile(
-            optimizer=optimizer,
-            loss=self._calculate_combined_loss,
-            metrics=[self._calculate_reconstruction_loss, self._calculate_kl_loss]
-        )
-    
-    def _calculate_combined_loss(self, y_target, y_predicted):
-        reconstruction_loss = self._calculate_reconstruction_loss(y_target, y_predicted)
-        kl_loss = self._calculate_kl_loss(y_target, y_predicted)
-        combined_loss = self._reconstruction_loss_weight * reconstruction_loss + kl_loss
-        return combined_loss
-
-    def _calculate_reconstruction_loss(self, y_target, y_predicted):
-        error = y_target - y_predicted
-        reconstruction_loss = tf.reduce_mean(tf.square(error), axis=[1, 2, 3])
-        return reconstruction_loss
-
-    def _calculate_kl_loss(self, y_target, y_predicted):
-        kl_loss = -0.5 * tf.reduce_sum(1 + self._bottleneck_log_variance - tf.square(self._bottleneck_mu) - tf.exp(self._bottleneck_log_variance), axis=1)
-        return kl_loss
+        self._decoder = decoder        
 
     def _get_parameters_to_save(self):
         return [
@@ -493,5 +471,56 @@ class VariationalAutoencoder(Autoencoder):
             self._strides,
             self._activations,
             self._latent_space_dim,
-            self._model_name
+            self.name
         ]
+
+    @property
+    def metrics(self):
+        return [ self._total_loss_tracker, self._reconstruction_loss_tracker, self._kl_loss_tracker ]
+
+    def train_step(self, data):
+        x, y = data
+        with tf.GradientTape() as tape:
+            encoded, mean, log_var = self._encoder(x)
+            decoded = self._decoder(encoded)
+            recon_loss = tf.reduce_sum(tf.keras.losses.binary_crossentropy(x, decoded), axis =(1, 2))
+            recon_loss = tf.reduce_mean(recon_loss)
+            kl_loss = -0.5 * (1 + log_var - tf.square(mean) - tf.exp(log_var))
+            kl_loss = tf.reduce_mean(tf.reduce_sum(kl_loss, axis=1))
+            total_loss = self._reconstruction_loss_weight * recon_loss + kl_loss
+        grads = tape.gradient(total_loss, self.trainable_weights)
+        self.optimizer.apply_gradients(zip(grads, self.trainable_weights))
+        self._total_loss_tracker.update_state(total_loss)
+        self._reconstruction_loss_tracker.update_state(recon_loss)
+        self._kl_loss_tracker.update_state(kl_loss)
+        return { m.name : m.result() for m in self.metrics }
+
+    def test_step(self, data):
+        # Unpack the data
+        x, y = data
+        # Compute predictions
+        y_pred = self(x, training=False)
+        # Updates the metrics tracking the loss
+        encoded, mean, log_var = self._encoder(x)
+        decoded = self._decoder(encoded)
+        recon_loss = tf.reduce_sum(tf.keras.losses.binary_crossentropy(x, decoded), axis =(1, 2))
+        recon_loss = tf.reduce_mean(recon_loss)
+        kl_loss = -0.5 * (1 + log_var - tf.square(mean) - tf.exp(log_var))
+        kl_loss = tf.reduce_mean(tf.reduce_sum(kl_loss, axis=1))
+        total_loss = self._reconstruction_loss_weight * recon_loss + kl_loss
+        self._total_loss_tracker.update_state(total_loss)
+        self._reconstruction_loss_tracker.update_state(recon_loss)
+        self._kl_loss_tracker.update_state(kl_loss)
+
+        # Update the metrics.
+        for metric in self.metrics:
+            if metric.name != "loss":
+                metric.update_state(y, y_pred)
+        # Return a dict mapping metric names to current value.
+        # Note that it will include the loss (tracked in self.metrics).
+        return {m.name: m.result() for m in self.metrics}
+
+    def call(self, x):
+        encoded, mu, log_var = self._encoder(x)
+        decoded = self._decoder(encoded)
+        return decoded
