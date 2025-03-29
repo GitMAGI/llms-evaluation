@@ -405,17 +405,19 @@ class VariationalAutoencoder(Autoencoder):
                 filters=self._filters[layer_index],          # (int) dimension of the output space
                 kernel_size=self._kernels[layer_index],      # (tuple) size of the convolution window
                 strides=self._strides[layer_index],
+                activation=self._activations[layer_index],
                 padding="same",
-                name=f"encoder_conv_layer_{layer_number}"
+                name=f"encoder_conv_layer_{layer_number}_with_activation_{self._activations[layer_index]}"
             )
             x = conv_layer(x)
-            x = Activation(self._activations[layer_index], name=f"encoder_relu_{layer_number}")(x)
-            x = BatchNormalization(name=f"encoder_bn_{layer_number}")(x)
+            #x = Activation(self._activations[layer_index], name=f"encoder_relu_{layer_number}")(x)
+            #x = BatchNormalization(name=f"encoder_bn_{layer_number}")(x)
         conv_layers = x
 
         # Create Bottleneck
         self._shape_before_bottleneck = conv_layers.shape[1:]        
         x = Flatten()(conv_layers)
+
         bottleneck_mu = Dense(self._latent_space_dim, name="mu")(x)
         bottleneck_log_variance = Dense(self._latent_space_dim, name="log_variance")(x)
 
@@ -430,7 +432,8 @@ class VariationalAutoencoder(Autoencoder):
         decoder_input = Input(shape=(self._latent_space_dim,), name="decoder_input")
         # Create a Dense layer
         num_neurons = np.prod(self._shape_before_bottleneck) # [1, 2, 4] -> 8
-        dense_layer = Dense(num_neurons, name="decoder_dense")(decoder_input)
+        #dense_layer = Dense(num_neurons, name="decoder_dense")(decoder_input)
+        dense_layer = Dense(num_neurons, activation="relu", name="decoder_dense")(decoder_input)
         # Create a Reshape layer
         reshape_layer = Reshape(self._shape_before_bottleneck)(dense_layer)
         # Create all convolutional blocks in decoder
@@ -441,23 +444,26 @@ class VariationalAutoencoder(Autoencoder):
                 filters=self._filters[layer_index],
                 kernel_size=self._kernels[layer_index],
                 strides=self._strides[layer_index],
+                activation=self._activations[layer_index],
                 padding="same",
                 name=f"decoder_conv_transpose_layer_{layer_num}"
             )
             x = conv_transpose_layer(x)
-            x = Activation(self._activations[layer_index], name=f"decoder_relu_{layer_num}")(x)
-            x = BatchNormalization(name=f"decoder_bn_{layer_num}")(x)
+            #x = Activation(self._activations[layer_index], name=f"decoder_relu_{layer_num}")(x)
+            #x = BatchNormalization(name=f"decoder_bn_{layer_num}")(x)
         conv_transpose_layers = x
         # Create output layer
         conv_transpose_layer = Conv2DTranspose(
                 filters=self._input_shape[-1], # Get the latest dimension of the input shape
                 kernel_size=self._kernels[0],
                 strides=self._strides[0],
+                activation="sigmoid",
                 padding="same",
-                name=f"decoder_conv_transpose_layer_{self._num_layers}"
+                name=f"decoder_conv_transpose_layer_{self._num_layers}_with_activation_sigmoid"
             )
         x = conv_transpose_layer(conv_transpose_layers)
-        decoder_output = Activation("sigmoid", name="sigmoid_layer")(x)
+        decoder_output = x
+        #decoder_output = Activation("sigmoid", name="sigmoid_layer")(x)
         # Define the model
         decoder = Model(decoder_input, decoder_output, name="decoder")
 
