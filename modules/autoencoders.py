@@ -1,7 +1,7 @@
 import os
 import tensorflow as tf
 from keras import Model, layers
-from keras.api.layers import Input, Dense, Conv2D, Conv2DTranspose, Reshape, Flatten, BatchNormalization, Activation
+from keras.api.layers import Input, Concatenate, Dense, Conv2D, Conv2DTranspose, Reshape, Flatten, BatchNormalization, Activation
 import numpy as np
 from datetime import datetime
 import pickle
@@ -171,11 +171,10 @@ class VanillaAutoencoder(Autoencoder):
                 name=f"encoder_layer_{layer_number}"
             )
             x = layer(x)
-        prev_layers = x
         # Create Bottleneck
-        bottleneck = Dense(self._latent_space_dim, name="encoder_output")(prev_layers)
+        z = Dense(self._latent_space_dim, name="encoder_output")(x)
         # Define the model
-        encoder = Model(encoder_input, bottleneck, name=f"encoder")
+        encoder = Model(encoder_input, z, name=f"encoder")
 
         # Decoder
         # Create Input layer
@@ -190,10 +189,9 @@ class VanillaAutoencoder(Autoencoder):
                 name=f"decoder_layer_{layer_num}"
             )
             x = layer(x)
-        prev_layers = x
         # Create output layer
-        sigmoid_layer = Dense(self._input_dim, activation="sigmoid", name="decoder_output")(prev_layers)
-        decoder_output = sigmoid_layer
+        x = Dense(self._input_dim, activation="sigmoid", name="decoder_output")(x)
+        decoder_output = x
         # Define the model
         decoder = Model(decoder_input, decoder_output, name=f"decoder")
 
@@ -272,27 +270,24 @@ class ConvolutedAutoencoder(Autoencoder):
             x = conv_layer(x)
             x = Activation(self._activations[layer_index], name=f"encoder_relu_{layer_number}")(x)
             x = BatchNormalization(name=f"encoder_bn_{layer_number}")(x)
-        conv_layers = x
 
         # Create Bottleneck
-        self._shape_before_bottleneck = conv_layers.shape[1:]
-        x = Flatten()(conv_layers)
-        x = Dense(self._latent_space_dim, name="encoder_output")(x)
-        bottleneck = x
+        self._shape_before_bottleneck = x.shape[1:]
+        x = Flatten()(x)
+        z = Dense(self._latent_space_dim, name="encoder_output")(x)
 
         # Define the model
-        encoder = Model(encoder_input, bottleneck, name="encoder")
+        encoder = Model(encoder_input, z, name="encoder")
 
         # Decoder
         # Create Input layer
         decoder_input = Input(shape=(self._latent_space_dim,), name="decoder_input")
         # Create a Dense layer
         num_neurons = np.prod(self._shape_before_bottleneck) # [1, 2, 4] -> 8
-        dense_layer = Dense(num_neurons, name="decoder_dense")(decoder_input)
+        x = Dense(num_neurons, name="decoder_dense")(decoder_input)
         # Create a Reshape layer
-        reshape_layer = Reshape(self._shape_before_bottleneck)(dense_layer)
+        x = Reshape(self._shape_before_bottleneck)(x)
         # Create all convolutional blocks in decoder
-        x = reshape_layer
         for layer_index in reversed(range(1, self._num_layers)):
             layer_num = self._num_layers - layer_index
             conv_transpose_layer = Conv2DTranspose(
@@ -305,7 +300,6 @@ class ConvolutedAutoencoder(Autoencoder):
             x = conv_transpose_layer(x)
             x = Activation(self._activations[layer_index], name=f"decoder_relu_{layer_num}")(x)
             x = BatchNormalization(name=f"decoder_bn_{layer_num}")(x)
-        conv_transpose_layers = x
         # Create output layer
         conv_transpose_layer = Conv2DTranspose(
                 filters=self._input_shape[-1], # Get the latest dimension of the input shape
@@ -314,7 +308,7 @@ class ConvolutedAutoencoder(Autoencoder):
                 padding="same",
                 name=f"decoder_conv_transpose_layer_{self._num_layers}"
             )
-        x = conv_transpose_layer(conv_transpose_layers)
+        x = conv_transpose_layer(x)
         decoder_output = Activation("sigmoid", name="sigmoid_layer")(x)
         # Define the model
         decoder = Model(decoder_input, decoder_output, name="decoder")
@@ -410,22 +404,16 @@ class VariationalAutoencoder(Autoencoder):
                 name=f"encoder_conv_layer_{layer_number}_with_activation_{self._activations[layer_index]}"
             )
             x = conv_layer(x)
-            #x = Activation(self._activations[layer_index], name=f"encoder_relu_{layer_number}")(x)
-            #x = BatchNormalization(name=f"encoder_bn_{layer_number}")(x)
-        conv_layers = x
 
         # Create Bottleneck
-        self._shape_before_bottleneck = conv_layers.shape[1:]        
-        x = Flatten()(conv_layers)
-
-        bottleneck_mu = Dense(self._latent_space_dim, name="mu")(x)
-        bottleneck_log_variance = Dense(self._latent_space_dim, name="log_variance")(x)
-
-        x = self.Sampling(name="encoder_output")([bottleneck_mu, bottleneck_log_variance])
-        bottleneck = x
+        self._shape_before_bottleneck = x.shape[1:]        
+        x = Flatten()(x)
+        z_mu = Dense(self._latent_space_dim, name="mu")(x)
+        z_log_var = Dense(self._latent_space_dim, name="log_variance")(x)
+        z = self.Sampling(name="encoder_output")([z_mu, z_log_var])
 
         # Define the model (multiple output defined in the array [bottleneck, mu, log_var])
-        encoder = Model(encoder_input, [bottleneck, bottleneck_mu, bottleneck_log_variance] , name="encoder")
+        encoder = Model(encoder_input, [z, z_mu, z_log_var] , name="encoder")
 
         # Decoder
         # Create Input layer
@@ -433,11 +421,10 @@ class VariationalAutoencoder(Autoencoder):
         # Create a Dense layer
         num_neurons = np.prod(self._shape_before_bottleneck) # [1, 2, 4] -> 8
         #dense_layer = Dense(num_neurons, name="decoder_dense")(decoder_input)
-        dense_layer = Dense(num_neurons, activation="relu", name="decoder_dense")(decoder_input)
+        x = Dense(num_neurons, activation="relu", name="decoder_dense")(decoder_input)
         # Create a Reshape layer
-        reshape_layer = Reshape(self._shape_before_bottleneck)(dense_layer)
+        x = Reshape(self._shape_before_bottleneck)(x)
         # Create all convolutional blocks in decoder
-        x = reshape_layer
         for layer_index in reversed(range(1, self._num_layers)):
             layer_num = self._num_layers - layer_index
             conv_transpose_layer = Conv2DTranspose(
@@ -449,9 +436,6 @@ class VariationalAutoencoder(Autoencoder):
                 name=f"decoder_conv_transpose_layer_{layer_num}"
             )
             x = conv_transpose_layer(x)
-            #x = Activation(self._activations[layer_index], name=f"decoder_relu_{layer_num}")(x)
-            #x = BatchNormalization(name=f"decoder_bn_{layer_num}")(x)
-        conv_transpose_layers = x
         # Create output layer
         conv_transpose_layer = Conv2DTranspose(
                 filters=self._input_shape[-1], # Get the latest dimension of the input shape
@@ -461,9 +445,7 @@ class VariationalAutoencoder(Autoencoder):
                 padding="same",
                 name=f"decoder_conv_transpose_layer_{self._num_layers}_with_activation_sigmoid"
             )
-        x = conv_transpose_layer(conv_transpose_layers)
-        decoder_output = x
-        #decoder_output = Activation("sigmoid", name="sigmoid_layer")(x)
+        decoder_output = conv_transpose_layer(x)
         # Define the model
         decoder = Model(decoder_input, decoder_output, name="decoder")
 
@@ -485,16 +467,20 @@ class VariationalAutoencoder(Autoencoder):
     def metrics(self):
         return [ self._total_loss_tracker, self._reconstruction_loss_tracker, self._kl_loss_tracker ]
 
+    def _custom_loss(self, input_data):
+        encoded, mean, log_var = self._encoder(input_data)
+        decoded = self._decoder(encoded)
+        recon_loss = tf.reduce_sum(tf.keras.losses.binary_crossentropy(input_data, decoded), axis =(1, 2))
+        recon_loss = tf.reduce_mean(recon_loss)
+        kl_loss = -0.5 * (1 + log_var - tf.square(mean) - tf.exp(log_var))
+        kl_loss = tf.reduce_mean(tf.reduce_sum(kl_loss, axis=1))
+        total_loss = self._reconstruction_loss_weight * recon_loss + kl_loss
+        return total_loss, recon_loss, kl_loss
+
     def train_step(self, data):
         x, y = data
         with tf.GradientTape() as tape:
-            encoded, mean, log_var = self._encoder(x)
-            decoded = self._decoder(encoded)
-            recon_loss = tf.reduce_sum(tf.keras.losses.binary_crossentropy(x, decoded), axis =(1, 2))
-            recon_loss = tf.reduce_mean(recon_loss)
-            kl_loss = -0.5 * (1 + log_var - tf.square(mean) - tf.exp(log_var))
-            kl_loss = tf.reduce_mean(tf.reduce_sum(kl_loss, axis=1))
-            total_loss = self._reconstruction_loss_weight * recon_loss + kl_loss
+            total_loss, recon_loss, kl_loss = self._custom_loss(self, x)
             grads = tape.gradient(total_loss, self.trainable_weights)
         self.optimizer.apply_gradients(zip(grads, self.trainable_weights))
         self._total_loss_tracker.update_state(total_loss)
@@ -508,13 +494,7 @@ class VariationalAutoencoder(Autoencoder):
         # Compute predictions
         y_pred = self(x, training=False)
         # Updates the metrics tracking the loss
-        encoded, mean, log_var = self._encoder(x)
-        decoded = self._decoder(encoded)
-        recon_loss = tf.reduce_sum(tf.keras.losses.binary_crossentropy(x, decoded), axis =(1, 2))
-        recon_loss = tf.reduce_mean(recon_loss)
-        kl_loss = -0.5 * (1 + log_var - tf.square(mean) - tf.exp(log_var))
-        kl_loss = tf.reduce_mean(tf.reduce_sum(kl_loss, axis=1))
-        total_loss = self._reconstruction_loss_weight * recon_loss + kl_loss
+        total_loss, recon_loss, kl_loss = self._custom_loss(self, x)
         self._total_loss_tracker.update_state(total_loss)
         self._reconstruction_loss_tracker.update_state(recon_loss)
         self._kl_loss_tracker.update_state(kl_loss)
