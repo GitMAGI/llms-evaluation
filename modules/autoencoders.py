@@ -1,6 +1,6 @@
 import os
 import tensorflow as tf
-from keras import Model, layers
+from keras import Model, layers, utils
 from keras.api.layers import Input, Concatenate, Dense, Conv2D, Conv2DTranspose, Reshape, Flatten, BatchNormalization, Activation
 import numpy as np
 from datetime import datetime
@@ -511,3 +511,200 @@ class VariationalAutoencoder(Autoencoder):
         encoded, mu, log_var = self._encoder(x)
         decoded = self._decoder(encoded)
         return decoded
+
+class ConditionedVariationalAutoencoder(Autoencoder):
+    """
+    This class implements a Condiotioned Variational Autoencoder.
+    Parameters:
+        input_shape: tuple, shape of the input data (height, width, channels)
+        input_labels_dim: number of input classes
+        filters: tuple of integers, number of filters in each convolutional layer. e.g. (32, 64, 64, 64)
+        kernels: tuple of integers, size of the kernel in each convolutional layer. e.g. (3, 3, 3, 3)
+        strides: tuple of integers, strides in each convolutional layer. e.g. (1, 2, 2, 1)
+        activations: tuple of strings, activations in each convolutional layer. e.g. ('relu', 'relu', 'relu', 'relu')
+        latent_space_dim: integer, dimension of the latent space
+        model_name: str, name of the model (optional)
+    """
+
+    def __init__(
+            self,
+            input_shape,
+            input_labels_dim,
+            filters,           # dimension of the output space
+            kernels,           # size of the convolution window
+            strides,
+            activations,
+            latent_space_dim,
+            model_name=None,
+            reconstruction_loss_weight = 1000,
+            **kwargs
+        ):
+        if len(filters) != len(kernels) != len(strides) != len(activations):
+            raise ValueError("The length of the following lists must be the same: filters, kernels, strides, activations")        
+
+        self._input_shape = input_shape
+        self._input_labels_dim = input_labels_dim
+        self._latent_space_dim = latent_space_dim
+        self._filters = filters
+        self._kernels = kernels
+        self._strides = strides
+        self._activations = activations        
+        self._num_layers = len(filters)
+        self._shape_before_bottleneck = None
+        self._reconstruction_loss_weight = reconstruction_loss_weight
+
+        #creating the 3 loss trackers
+        self._total_loss_tracker = tf.keras.metrics.Mean(name="loss")
+        self._reconstruction_loss_tracker = tf.keras.metrics.Mean(name="recon_loss")
+        self._kl_loss_tracker = tf.keras.metrics.Mean(name="kl_loss")
+
+        super(ConditionedVariationalAutoencoder, self).__init__(latent_space_dim, model_name, **kwargs)
+
+    class Sampling(layers.Layer):
+        def call(self, inputs):
+            z_mean, z_log_var = inputs
+            epsilon = tf.keras.backend.random_normal(shape=tf.shape(z_mean))
+            return z_mean + tf.exp(0.5* z_log_var) * epsilon
+
+    def _build(self):
+        # Encoder
+        # Create Input layers
+        encoder_data_input = Input(shape=self._input_shape, name="encoder_data_input")
+        encoder_label_input = Input(shape=(self._input_labels_dim,), name="encoder_label_input")
+        # Create all convolutional blocks in encoder
+        x = encoder_data_input
+        for layer_index in range(self._num_layers):
+            layer_number = layer_index + 1
+            conv_layer = Conv2D(
+                filters=self._filters[layer_index],          # (int) dimension of the output space
+                kernel_size=self._kernels[layer_index],      # (tuple) size of the convolution window
+                strides=self._strides[layer_index],
+                activation=self._activations[layer_index],
+                padding="same",
+                name=f"encoder_conv_layer_{layer_number}_with_activation_{self._activations[layer_index]}"
+            )
+            x = conv_layer(x)
+
+        # Create Bottleneck
+        self._shape_before_bottleneck = x.shape[1:]        
+        x = Flatten()(x)
+        # Concatenate Input data and class labels
+        x = Concatenate()([x, encoder_label_input])
+        x = Activation(self._activations[layer_index], name=f"encoder_bn_relu")(x)
+        x = BatchNormalization(name=f"encoder_bn_batch_norm")(x)
+        z_mu = Dense(self._latent_space_dim, name="mu")(x)
+        z_log_var = Dense(self._latent_space_dim, name="log_variance")(x)
+        z = self.Sampling(name="encoder_output")([z_mu, z_log_var])
+
+        # Define the model (multiple output defined in the array [z, z_mu, z_log_var])
+        encoder = Model([encoder_data_input, encoder_label_input], [z, z_mu, z_log_var] , name="encoder")
+
+        # Decoder
+        # Create Input layers
+        decoder_data_input = Input(shape=(self._latent_space_dim,), name="decoder_data_input")
+        decoder_label_input = Input(shape=(self._input_labels_dim,), name="decoder_label_input")
+        # Concatenate Input layers
+        x = Concatenate()([decoder_data_input, decoder_label_input])
+        # Create a Dense layer
+        num_neurons = np.prod(self._shape_before_bottleneck) # [1, 2, 4] -> 8
+        #dense_layer = Dense(num_neurons, name="decoder_dense")(decoder_input)
+        x = Dense(num_neurons, activation="relu", name="decoder_dense")(x)
+        # Create a Reshape layer
+        x = Reshape(self._shape_before_bottleneck)(x)
+        # Create all convolutional blocks in decoder
+        for layer_index in reversed(range(1, self._num_layers)):
+            layer_num = self._num_layers - layer_index
+            conv_transpose_layer = Conv2DTranspose(
+                filters=self._filters[layer_index],
+                kernel_size=self._kernels[layer_index],
+                strides=self._strides[layer_index],
+                activation=self._activations[layer_index],
+                padding="same",
+                name=f"decoder_conv_transpose_layer_{layer_num}"
+            )
+            x = conv_transpose_layer(x)
+        # Create output layer
+        conv_transpose_layer = Conv2DTranspose(
+                filters=self._input_shape[-1], # Get the latest dimension of the input shape
+                kernel_size=self._kernels[0],
+                strides=self._strides[0],
+                activation="sigmoid",
+                padding="same",
+                name=f"decoder_conv_transpose_layer_{self._num_layers}_with_activation_sigmoid"
+            )
+        decoder_output = conv_transpose_layer(x)
+        # Define the model
+        decoder = Model([decoder_data_input, decoder_label_input], decoder_output, name="decoder")
+
+        self._encoder = encoder
+        self._decoder = decoder        
+
+    def _get_parameters_to_save(self):
+        return [
+            self._input_shape,            
+            self._filters,
+            self._kernels,
+            self._strides,
+            self._activations,
+            self._latent_space_dim,
+            self.name
+        ]
+
+    @property
+    def metrics(self):
+        return [ self._total_loss_tracker, self._reconstruction_loss_tracker, self._kl_loss_tracker ]
+
+    def _custom_loss(self, input_data, input_labels):
+        encoded, mean, log_var = self._encoder([input_data, input_labels])
+        decoded = self._decoder([encoded, input_labels])
+        recon_loss = tf.reduce_sum(tf.keras.losses.binary_crossentropy(input_data, decoded), axis =(1, 2))
+        recon_loss = tf.reduce_mean(recon_loss)
+        kl_loss = -0.5 * (1 + log_var - tf.square(mean) - tf.exp(log_var))
+        kl_loss = tf.reduce_mean(tf.reduce_sum(kl_loss, axis=1))
+        total_loss = self._reconstruction_loss_weight * recon_loss + kl_loss
+        return total_loss, recon_loss, kl_loss
+
+    def train_step(self, data):
+        #print(len(data))
+        x, y = data
+        #print(len(x))
+        in_data, in_labels = x
+        #print(in_data.shape)
+        with tf.GradientTape() as tape:
+            total_loss, recon_loss, kl_loss = self._custom_loss(in_data, in_labels)
+            grads = tape.gradient(total_loss, self.trainable_weights)
+        self.optimizer.apply_gradients(zip(grads, self.trainable_weights))
+        self._total_loss_tracker.update_state(total_loss)
+        self._reconstruction_loss_tracker.update_state(recon_loss)
+        self._kl_loss_tracker.update_state(kl_loss)
+        return { m.name : m.result() for m in self.metrics }
+
+    def test_step(self, data):
+        # Unpack the data
+        x, y = data
+        in_data, in_labels = x
+        out_data, out_labels = y
+        # Compute predictions
+        y_pred = self(x, training=False)
+        # Updates the metrics tracking the loss
+        total_loss, recon_loss, kl_loss = self._custom_loss(in_data, in_labels)
+        self._total_loss_tracker.update_state(total_loss)
+        self._reconstruction_loss_tracker.update_state(recon_loss)
+        self._kl_loss_tracker.update_state(kl_loss)
+
+        # Update the metrics.
+        for metric in self.metrics:
+            if metric.name != "loss":
+                metric.update_state(out_data, y_pred)
+        # Return a dict mapping metric names to current value.
+        # Note that it will include the loss (tracked in self.metrics).
+        return {m.name: m.result() for m in self.metrics}
+    
+    def call(self, x):
+        in_data, in_label = x
+        encoded, mu, log_var = self._encoder(x)
+        decoded = self._decoder([encoded, in_label])
+        return decoded
+    
+    def transform_to_categorical(self, input):
+        return utils.to_categorical(input, num_classes=self._input_labels_dim)
