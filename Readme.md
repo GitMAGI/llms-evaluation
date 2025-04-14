@@ -16,3 +16,22 @@ docker run --rm --runtime=nvidia --gpus all docker.io/nvidia/cuda:11.0.3-base-ub
 - click on the wrench
 - you need to put the exact name and tag of the model you want to add; these names are listed <a href="https://ollama.com/library">here</a> 
 
+___
+
+## Test mermaid
+
+```mermaid
+gitGraph:
+    commit "Ashish"
+    branch newbranch
+    checkout newbranch
+    commit id:"1111"
+    commit tag:"test"
+    checkout main
+    commit type: HIGHLIGHT
+    commit
+    merge newbranch
+    commit
+    branch b2
+    commit
+ ```
