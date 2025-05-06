@@ -29,7 +29,7 @@ class Autoencoder(Model):
 
         if model_name is None:
             model_name = datetime.now().strftime("%Y%m%d%H%M%S")
-        self._latent_space_dim = latent_space_dim        
+        self._latent_space_dim = latent_space_dim
         self.name = model_name
         
         self._build()        
@@ -63,7 +63,7 @@ class Autoencoder(Model):
         self._encoder.summary()
         self._decoder.summary()
 
-    def train(self, x_train, x_val, batch_size, epochs, shuffle=True):
+    def train_model(self, x_train, x_val, batch_size, epochs, shuffle=True):
         self._training_history = self.fit(
             x_train, 
             x_train,

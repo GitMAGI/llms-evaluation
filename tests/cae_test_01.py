@@ -8,7 +8,7 @@ import tensorflow as tf
 parent_dir = os.path.abspath('.')
 if parent_dir not in sys.path:
     sys.path.append(parent_dir)
-from modules.autoencoders import ConvolutedAutoencoder
+from modules.autoencoders_keras import ConvolutedAutoencoder
 
 def main():
     N = 1000
@@ -43,7 +43,7 @@ def main():
     optimizer.learning_rate.assign(.0001)
     cae.compile(optimizer=optimizer, loss='mse')
     cae.print_summaries()
-    cae_history = cae.train(x_train=x_train, x_val=x_val, batch_size=256, epochs=10, shuffle=True)
+    cae_history = cae.train_model(x_train=x_train, x_val=x_val, batch_size=256, epochs=10, shuffle=True)
 
     # Plot training & validation loss values
     plt.figure(figsize=(10, 5))

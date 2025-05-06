@@ -8,7 +8,7 @@ import tensorflow as tf
 parent_dir = os.path.abspath('.')
 if parent_dir not in sys.path:
     sys.path.append(parent_dir)
-from modules.autoencoders import VariationalAutoencoder
+from modules.autoencoders_keras import VariationalAutoencoder
 
 def main():
     N = 1000
@@ -44,7 +44,7 @@ def main():
     optimizer.learning_rate.assign(.0001)
     vae.compile(optimizer=optimizer)
     vae.print_summaries()
-    vae_history = vae.train(x_train=x_train, x_val=x_val, batch_size=256, epochs=10, shuffle=True)
+    vae_history = vae.train_model(x_train=x_train, x_val=x_val, batch_size=256, epochs=10, shuffle=True)
 
     # Plot training & validation loss values
     plt.figure(figsize=(10, 5))
