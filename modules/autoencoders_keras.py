@@ -480,7 +480,7 @@ class VariationalAutoencoder(Autoencoder):
     def train_step(self, data):
         x, y = data
         with tf.GradientTape() as tape:
-            total_loss, recon_loss, kl_loss = self._custom_loss(self, x)
+            total_loss, recon_loss, kl_loss = self._custom_loss(x)
             grads = tape.gradient(total_loss, self.trainable_weights)
         self.optimizer.apply_gradients(zip(grads, self.trainable_weights))
         self._total_loss_tracker.update_state(total_loss)
@@ -494,7 +494,7 @@ class VariationalAutoencoder(Autoencoder):
         # Compute predictions
         y_pred = self(x, training=False)
         # Updates the metrics tracking the loss
-        total_loss, recon_loss, kl_loss = self._custom_loss(self, x)
+        total_loss, recon_loss, kl_loss = self._custom_loss(x)
         self._total_loss_tracker.update_state(total_loss)
         self._reconstruction_loss_tracker.update_state(recon_loss)
         self._kl_loss_tracker.update_state(kl_loss)
